@@ -12,64 +12,65 @@ REPS=15
 function log_version {
     VERSIONFLAG=${2:-"--version"}
     # Print version
-    echo "$1" >> "$VERSIONFILE"
-    "$1" "$VERSIONFLAG" >> "$VERSIONFILE"
+    {
+        echo "$1"
+        "$1" "$VERSIONFLAG"
+        echo ""
+    } &>> "$VERSIONFILE"
 }
 
 function test_null {
-    # Arguments:
-    # $1 - Command
-    # $2 - Script flag (if any)
-
     for ((n=0;n<REPS;n++)); do
         printf "%s " "$1" >> "$NULLFILE"
         # Don't double quote - $3 might not exist
         # Use builtin time
         # shellcheck disable=SC2086 disable=SC2023
-        { time $1 $3 /dev/null; } 2>> "$NULLFILE"
+        { time $1 $2 /dev/null; } 2>> "$NULLFILE"
         # builtin time's output is generated at end of line
     done
-
-    # builtin time is more precise:
-    # https://unix.stackexchange.com/questions/70653/increase-e-precision-with-usr-bin-time-shell-command
-
-    # /bin/time --format="%e %S %U" $1 $3 /dev/null
 }
 
 function test_script {
     for ((n=0;n<REPS;n++)); do
         printf "%s " "$1" >> "$SCRIPTFILE"
+        printf "%s " "$1" >> "$CHECKSUMFILE"
         # Don't double quote - $3 might not exist
         # Use builtin time
         # shellcheck disable=SC2086 disable=SC2023
-        { time $1 $3 $2 >> "$CHECKSUMFILE"; } 2>> "$SCRIPTFILE"
+        { time $1 $3 "./test$2" >> "$CHECKSUMFILE"; } 2>> "$SCRIPTFILE"
         # builtin time's output is generated at end of line
     done
 }
 
+function run_test {
+    # $1 - Program name
+    # $2 - Script extension
+    # $3 - Script flag
+    # $4 - Version flag
+    log_version $1 $4
+    test_null $1 $3
+    test_script $1 $2 $3
+}
+
 NUMPROGRAMS=11
 
-test_script bash ./test.sh
-test_script node ./test.js
-test_script sbcl ./test.lsp --script
-test_script ruby ./test.rb
-test_script perl ./test.pl
-test_script perl6 ./test.pl
-test_script python3 ./test3.py
-test_script python2 ./test2.py
-test_script deno ./test.js run
-test_script lua ./test.lua
-test_script racket ./test.rkt --script
+run_test    bash    .sh
+run_test    node    .js
+run_test    sbcl    .lsp     --script
+run_test    ruby    .rb
+run_test    perl    .pl
+run_test    perl6   .pl
+run_test    python3 3.py
+run_test    python2 2.py
+run_test    deno    .js     run         version
+run_test    lua     .lua    " "         -v
+run_test    racket  .rkt    --script
 
 lines=$(wc -l < "$CHECKSUMFILE")
 expected=$((NUMPROGRAMS * REPS))
 
 if [ "$lines" -ne $expected ]; then
     echo "ERROR: unexpected number of outputlines printed"
+    printf "Found %d, expected %d\n" "$lines" "$expected"
 fi
 
-# runtest "bash" "--version"
-# runtest "node" "--version"
-# runtest "sbcl" "--version" "--script"
-
-# runtest2 "sbcl" "--version" "--script"
